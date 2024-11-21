@@ -12,6 +12,9 @@ import SwiftUI
 @main
 struct AnalyticsWorkspaceApp: App {
     
+    /// Instance of the AppDelegate.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     /// Instance of the {@link AnalyticsRouter}.
     @ObservedObject private var router: AnalyticsRouter = .init()
     
