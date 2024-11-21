@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		015B43FF2CEE9D7500ECF85D /* AnalyticsSdk in Frameworks */ = {isa = PBXBuildFile; productRef = 015B43FE2CEE9D7500ECF85D /* AnalyticsSdk */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		015B43D22CEE8B6700ECF85D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				015B43FF2CEE9D7500ECF85D /* AnalyticsSdk in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = AnalyticsWorkspace;
 			packageProductDependencies = (
+				015B43FE2CEE9D7500ECF85D /* AnalyticsSdk */,
 			);
 			productName = AnalyticsWorkspace;
 			productReference = 015B43C12CEE8B6400ECF85D /* AnalyticsWorkspace.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = 015B43B82CEE8B6400ECF85D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				015B43FD2CEE9D7500ECF85D /* XCLocalSwiftPackageReference "AnalyticsSdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 015B43C22CEE8B6400ECF85D /* Products */;
 			projectDirPath = "";
@@ -558,6 +567,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		015B43FD2CEE9D7500ECF85D /* XCLocalSwiftPackageReference "AnalyticsSdk" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = AnalyticsSdk;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		015B43FE2CEE9D7500ECF85D /* AnalyticsSdk */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AnalyticsSdk;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 015B43B92CEE8B6400ECF85D /* Project object */;
 }
