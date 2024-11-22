@@ -7,18 +7,21 @@
 
 import Foundation
 import SwiftUI
+import AnalyticsSdk
 
 /// Base view model class.
 open class AbsViewModel : ObservableObject {
+    /// INstance of the {@link DeviceManager}.
+    @DeviceManager.Wrapper var deviceManager
+    /// Instance of the {@link GalleryManager}.
+    @GalleryManager.Wrapper var galleryManager
     
-    /// Method which provide the create functional.
-    open func onCreate() {
-        print("\(Self.self) was created.")
-    }
+    /// Method which provide the appear functional.
+    open func onAppear() { print("\(Self.self) was appeared.") }
     
-    /// Method which provide the destroy functional.
-    open func onDestroy() {
-        print("\(Self.self) was destroyed.")
-    }
+    /// Method which provide the disapear functional.
+    open func onDisapear() { print("\(Self.self) was disappeared.") }
     
+    /// Deinit functional.
+    deinit { print("\(Self.self) was destroyed.") }
 }
