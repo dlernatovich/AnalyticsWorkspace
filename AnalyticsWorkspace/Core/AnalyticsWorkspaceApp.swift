@@ -26,8 +26,8 @@ struct AnalyticsWorkspaceApp: App {
                     switch it {
                     case .main: EmptyView() // Can't navigate to main screen.
                     case .device: DeviceView().environmentObject(router)
-                    case .images: ImagesView().environmentObject(router)
-                    case .videos: VideosView().environmentObject(router)
+                    case .images(let count): MetadatasView(type:.photo, count: count).environmentObject(router)
+                    case .videos(let count): MetadatasView(type: .video, count: count).environmentObject(router)
                     }
                 }
             }

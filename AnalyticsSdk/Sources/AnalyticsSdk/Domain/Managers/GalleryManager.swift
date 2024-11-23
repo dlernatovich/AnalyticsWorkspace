@@ -2,18 +2,34 @@
 //  File.swift
 //  AnalyticsSdk
 //
-//
 
 import Foundation
 import UIKit
 import Photos
 
 //MARK: - GalleryManager
-/// Manager for gallery functional.
+/// Manager for gallery functionality.
 public final class GalleryManager {
     
-    /// Instance of the {@link GalleryManager}.
+    /// Instance of the `GalleryManager`.
     public static let shared: GalleryManager = .init()
+    
+    // Serial queue for ensuring sequential execution of onResult.
+    private let serialQueue = DispatchQueue(label: "com.gallerymanager.serialQueue", qos: .userInteractive)
+    /// Serial queue for ensuring sequential execution of processing.
+    private let fetchQueue = DispatchQueue(label: "com.gallerymanager.fetch", qos: .background)
+    /// Current `DispatchWorkItem` for tracking active fetch.
+    private var currentWorkItem: DispatchWorkItem?
+    
+    /// Instance of the `GalleryManagerDelegate`.
+    fileprivate weak var delegate: GalleryManagerDelegate? {
+        didSet { invalidateCurentWork() }
+    }
+    
+    /// Set of allowed statuses.
+    let statuses: Set<PHAuthorizationStatus> = [.authorized, .limited]
+    
+    
     
     /// Property wrapper for the {@link GalleryManager}.
     @propertyWrapper
@@ -26,15 +42,50 @@ public final class GalleryManager {
     
 }
 
+//MARK: - GalleryManager - Work
+/// Extension providing work functionality.
+public extension GalleryManager {
+    
+    /// Invalidates the current fetch by cancelling the `DispatchWorkItem`.
+    public func finishCurentWork() {
+        self.invalidateCurentWork()
+        self.onResult { delegate in
+            delegate?.galleryManagerOnResult(status: .cancelled, items: nil)
+        }
+    }
+    
+    /// Invalidates the current fetch by cancelling the `DispatchWorkItem`.
+    private func invalidateCurentWork() {
+        if let work = self.currentWorkItem {
+            print("\(Self.self) work was finished \(work)")
+            work.cancel()
+        }
+        self.currentWorkItem = nil
+    }
+}
+
 //MARK: - GalleryManager - Authorization
-/// Extension which provide the authorization.
+/// Extension providing authorization functionality.
 private extension GalleryManager {
     
-    /// Method which provide to request authorization.
-    /// - Parameter it: callback instance.
+    /// Method to request authorization.
+    /// - Parameter it: Callback instance.
     func requestAuthorization(_ it: @escaping (PHAuthorizationStatus) -> Void) {
         PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
             it(status)
+        }
+    }
+}
+
+//MARK: - GalleryManager - OnResult
+/// Extension providing result handling functionality.
+private extension GalleryManager {
+    
+    /// Method to handle results on the main thread asynchronously.
+    /// - Parameter it: Callback.
+    func onResult(_ it: @escaping (_ delegate: GalleryManagerDelegate?) -> Void) {
+        serialQueue.async { [weak self] in
+            DispatchQueue.main.sync { [weak self] in it(self?.delegate) }
         }
     }
 }
@@ -43,84 +94,91 @@ private extension GalleryManager {
 /// Extension which provide the count functional.
 public extension GalleryManager {
     
-    /// Method which provide to get photo count.
-    /// - Parameter it: callback instance.
-    public func fetchPhotoCount(_ it: @escaping (Int?) -> Void) {
-        self.fetchAssetCount { [it] photo, video in it(photo) }
-    }
-    
-    /// Method which provide to getting of the videos count.
-    /// - Parameter it: callback instance.
-    public func fetchVideoCount(_ it: @escaping (Int?) -> Void) {
-        self.fetchAssetCount { [it] photo, video in it(video) }
-    }
-    
-    /// Method which provide to fetch gallery items count.
-    /// - Parameter it: callback instance.
-    public func fetchGalleryCount(
-        _ it: @Sendable @escaping (_ photo: Int?, _ video: Int?) -> Void
-    ) { self.fetchAssetCount(completion: it) }
-    
-    /// Method which provide to get of the assets count.
-    /// - Parameters:
-    ///   - mediaType: value.
-    ///   - completion: callback.
-    private func fetchAssetCount(completion: @escaping (_ photo: Int?, _ video: Int?) -> Void) {
-        self.requestAuthorization { status in
-            var photoCount: Int? = nil
-            var videoCount: Int? = nil
-            if status != .authorized {
-                print("\(Self.self) access to gallery forbiden.")
-            } else {
+    /// Method which provide to get the assets count.
+    /// - Parameter it: delegate instance.
+    public func fetchGalleryCount(_ it: GalleryManagerDelegate?) {
+        self.delegate = it
+        var workItem: DispatchWorkItem?
+        workItem = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            self.onResult { delegate in
+                delegate?.galleryManagerOnResult(status: .progress, items: nil)
+            }
+            self.requestAuthorization { [weak self, statuses] status in
+                guard let self = self else { return }
+                guard let workItem = workItem, !workItem.isCancelled else { return }
+                guard statuses.contains(status) else {
+                    self.onResult { delegate in
+                        delegate?.galleryManagerOnResult(status: .accessDenied, items: nil)
+                    }
+                    return print("\(Self.self) access to gallery forbidden.")
+                }
                 let fetchOptions = PHFetchOptions()
                 let photoFetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
                 let videoFetchResult = PHAsset.fetchAssets(with: .video, options: fetchOptions)
-                photoCount = photoFetchResult.count
-                videoCount = videoFetchResult.count
+                let photoCount = photoFetchResult.count
+                let videoCount = videoFetchResult.count
+                self.onResult { [photoCount, videoCount] delegate in
+                    delegate?.galleryManagerCountRecieved(photos: photoCount, videos: videoCount)
+                }
+                self.invalidateCurentWork()
             }
-            DispatchQueue.main.async { completion(photoCount, videoCount) }
         }
+        self.currentWorkItem = workItem
+        self.fetchQueue.async(execute: workItem!)
     }
 }
 
 //MARK: - GalleryManager - Fetch
-/// Extension which provide the fetch functional.
+/// Extension providing fetch functionality.
 public extension GalleryManager {
     
-    /// Method which provide to fetch meta data for type.
+    /// Method to fetch metadata for a specific type.
     /// - Parameters:
-    ///   - type: value.
-    ///   - it: callback instance.
-    public func fetchMetaData(
-        type: GalleryTypeEnum,
-        _ it: @escaping (_ items: [MetaDataModel]) -> Void
-    ) {
-        self.requestAuthorization { [weak self] status in
+    ///   - type: The type of gallery item to fetch.
+    ///   - delegate: Callback instance.
+    func fetchMetaData(type: GalleryTypeEnum, delegate: GalleryManagerDelegate?) {
+        self.delegate = delegate
+        var workItem: DispatchWorkItem?
+        workItem = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            guard status == .authorized else { return it([]) }
-            switch type {
-            case .photo: self.fetchPhotoMetaData(it)
-            case .video: self.fetchVideoMetaData(it)
+            self.onResult { delegate in
+                delegate?.galleryManagerOnResult(status: .progress, items: nil)
+            }
+            self.requestAuthorization { [weak self] status in
+                guard let self = self else { return }
+                guard let workItem = workItem, !workItem.isCancelled else { return }
+                guard self.statuses.contains(status) else {
+                    self.onResult { delegate in
+                        delegate?.galleryManagerOnResult(status: .accessDenied, items: nil)
+                    }
+                    return print("\(Self.self) access to gallery forbidden.")
+                }
+                switch type {
+                case .photo: self.fetchPhotoMetaData(workItem: workItem)
+                case .video: self.fetchVideoMetaData(workItem: workItem)
+                }
             }
         }
+        self.currentWorkItem = workItem
+        self.fetchQueue.async(execute: workItem!)
     }
     
-    
-    /// Method which provide to fetch photo meta data.
-    /// - Parameter it: callback instance.
-    private func fetchPhotoMetaData(_ it: @escaping (_ items: [MetaDataModel]) -> Void) {
+    /// Method to fetch photo metadata.
+    private func fetchPhotoMetaData(workItem: DispatchWorkItem) {
         var result: [MetaDataModel] = []
         let fetchOptions = PHFetchOptions()
         let fetchResult = PHAsset.fetchAssets(with: .image, options: fetchOptions)
-        fetchResult.enumerateObjects { asset, _, _ in
+        guard fetchResult.count > 0 else {
+            return finishFetch(workItem: workItem, status: .successEmpty, items: nil)
+        }
+        fetchResult.enumerateObjects { [weak self] asset, _, _ in
+            guard let self = self else { return }
+            guard !workItem.isCancelled else { return }
             let resource = PHAssetResource.assetResources(for: asset)
             let fileName = resource.first?.originalFilename ?? "Unknown"
-            var sizeOnDisk: Int64? = 0
+            let sizeOnDisk = self.getSize(resource)
             let dimensions = CGSize(width: asset.pixelWidth, height: asset.pixelHeight)
-            if let resource = resource.first {
-                let unsignedInt64 = resource.value(forKey: "fileSize") as? CLong
-                sizeOnDisk = Int64(bitPattern: UInt64(unsignedInt64!))
-            }
             let item = MetaDataModel(
                 type: .photo,
                 name: fileName,
@@ -129,29 +187,45 @@ public extension GalleryManager {
                 dimensions: dimensions,
                 duration: nil
             )
+            self.onResult { [item] delegate in
+                delegate?.galleryManagerItemRecieved(item: item)
+            }
             result.append(item)
         }
-        DispatchQueue.main.async { it(result) }
+        self.finishFetch(
+            workItem: workItem,
+            status: result.count > 0 ? .success : .successEmpty,
+            items: result
+        )
     }
     
-    /// Method which provide to send the video meta data.
-    /// - Parameter it: callback instance.
-    private func fetchVideoMetaData(_ it: @escaping (_ items: [MetaDataModel]) -> Void) {
+    /// Method to fetch video metadata.
+    private func fetchVideoMetaData(workItem: DispatchWorkItem) {
         var result: [MetaDataModel] = []
         let fetchOptions = PHFetchOptions()
         let fetchResult = PHAsset.fetchAssets(with: .video, options: fetchOptions)
-        fetchResult.enumerateObjects { asset, _, _ in
+        let fetchCount = fetchResult.count
+        guard fetchCount > 0 else {
+            return self.finishFetch(workItem: workItem, status: .successEmpty, items: nil)
+        }
+        fetchResult.enumerateObjects { [weak self, fetchCount] asset, _, _ in
+            guard let self = self else { return }
+            guard !workItem.isCancelled else { return }
             let resource = PHAssetResource.assetResources(for: asset)
             let fileName = resource.first?.originalFilename ?? "Unknown"
             let dimensions = CGSize(width: asset.pixelWidth, height: asset.pixelHeight)
+            var fileSize: Int64? = nil
+            var duration: TimeInterval? = nil
             let imageManager = PHImageManager.default()
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = true
-            imageManager.requestAVAsset(forVideo: asset, options: options) { avAsset, _, info in
-                guard let urlAsset = avAsset as? AVURLAsset else { return }
-                let fileName = urlAsset.url.lastPathComponent
-                let fileSize = self.getFileSize(url: urlAsset.url)
-                let duration = asset.duration
+            imageManager.requestAVAsset(forVideo: asset, options: options) { [weak self, fetchCount] avAsset, _, _ in
+                guard let self = self else { return }
+                guard !workItem.isCancelled else { return }
+                if let urlAsset = avAsset as? AVURLAsset {
+                    fileSize = self.getSize(urlAsset.url)
+                    duration = asset.duration
+                }
                 let item = MetaDataModel(
                     type: .video,
                     name: fileName,
@@ -160,16 +234,41 @@ public extension GalleryManager {
                     dimensions: dimensions,
                     duration: duration
                 )
+                self.onResult { [item] delegate in
+                    delegate?.galleryManagerItemRecieved(item: item)
+                }
                 result.append(item)
+                if (result.count >= fetchCount) {
+                    self.finishFetch(
+                        workItem: workItem,
+                        status: result.count > 0 ? .success : .successEmpty,
+                        items: result
+                    )
+                }
             }
         }
-        DispatchQueue.main.async { it(result) }
     }
     
-    /// Method which provide to get the video file size.
-    /// - Parameter url: value.
-    /// - Returns: value.
-    private func getFileSize(url: URL) -> Int64? {
+    /// Method which provide to finish fetch.
+    /// - Parameters:
+    ///   - status: value.
+    ///   - items: array.
+    private func finishFetch(
+        workItem: DispatchWorkItem,
+        status: ProgressStatusEnum,
+        items: [MetaDataModel]?
+    ) {
+        self.onResult { [weak self, items] delegate in
+            guard !workItem.isCancelled else { return }
+            delegate?.galleryManagerOnResult(status: status, items: items)
+            self?.invalidateCurentWork()
+        }
+    }
+    
+    /// Method to get the video file size.
+    /// - Parameter url: URL of the video.
+    /// - Returns: Size value.
+    private func getSize(_ url: URL) -> Int64? {
         do {
             let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey])
             return Int64(resourceValues.fileSize ?? 0)
@@ -178,29 +277,13 @@ public extension GalleryManager {
             return nil
         }
     }
-}
-
-// MARK: - GalleryManager - Fetch Thumbnail
-/// Extension which provide to fetch thumbnail.
-private extension GalleryManager {
     
-    /// Method to fetch thumbnail for asset.
-    /// - Parameters:
-    ///   - asset: The PHAsset for the photo.
-    ///   - size: The target size for the thumbnail.
-    ///   - completion: Callback with the generated UIImage.
-    func fetchThumbnail(
-        for asset: PHAsset,
-        size: CGSize,
-        completion: @escaping (UIImage?) -> Void
-    ) {
-        let imageManager = PHImageManager.default()
-        let options = PHImageRequestOptions()
-        options.deliveryMode = .fastFormat
-        options.resizeMode = .exact
-        options.isSynchronous = false
-        imageManager.requestImage(for: asset, targetSize: size, contentMode: .aspectFit, options: options) { image, _ in
-            completion(image)
-        }
+    /// Method to get size of an asset resource.
+    /// - Parameter it: Array of `PHAssetResource`.
+    /// - Returns: Size value.
+    private func getSize(_ it: [PHAssetResource]) -> Int64? {
+        guard let resource = it.first else { return nil }
+        let unsignedInt64 = resource.value(forKey: "fileSize") as? CLong
+        return unsignedInt64 != nil ? Int64(bitPattern: UInt64(unsignedInt64!)) : nil
     }
 }

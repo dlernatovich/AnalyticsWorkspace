@@ -37,4 +37,13 @@ public extension MetaDataModel {
         return "\(Int(dimensions.height)) x \(Int(dimensions.width))"
     }
     
+    /// Method which provide to get durations.
+    /// - Returns: duration value.
+    public func getDuration() -> String? {
+        guard let duration = duration else { return nil }
+        let minutes = Int(duration) / 60
+        let seconds = Int(duration) % 60
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+    
 }

@@ -24,26 +24,26 @@ struct DeviceView : View {
             } else {
                 Section(.software) {
                     getView(
-                        image: "info.circle",
+                        image: .info_circle,
                         desc: .manufacturer,
-                        text: vm.info?.manufacturer ?? "-"
+                        text: vm.info?.manufacturer
                     )
                     getView(
-                        image: "apple.logo",
+                        image: .apple_logo,
                         desc: .operationSystem,
-                        text: vm.info?.osVersion ?? "-"
+                        text: vm.info?.osVersion
                     )
                 }
                 Section(.hardware) {
                     getView(
-                        image: "iphone.badge.exclamationmark",
+                        image: .iphone_badge_exclamationmark,
                         desc: .deviceModel,
-                        text: vm.info?.deviceModel ?? "-"
+                        text: vm.info?.deviceModel
                     )
                     getView(
-                        image: "square.resize",
+                        image: .square_resize,
                         desc: .screenResolution,
-                        text: vm.info?.getDeviceResolution() ?? "-"
+                        text: vm.info?.getDeviceResolution()
                     )
                 }
             }
@@ -60,18 +60,20 @@ struct DeviceView : View {
     ///   - text: value.
     /// - Returns: view.
     private func getView(
-        image: String,
+        image: Image,
         desc: LocalizedStringKey,
-        text: String
+        text: String?
     ) -> some View {
         return HStack {
-            Image(systemName: image)
-                .aspectRatio(contentMode: .fit)
+            image.aspectRatio(contentMode: .fit)
                 .foregroundColor(.accentColor)
                 .frame(width: 20)
-            Text(desc).font(.body)
+            Text(desc)
+                .font(.body)
             Spacer()
-            Text(verbatim: text).font(.caption).opacity(0.6)
+            Text(verbatim: text ?? "-")
+                .font(.caption)
+                .opacity(0.6)
         }
     }
 }
